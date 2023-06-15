@@ -3,7 +3,8 @@ from collections import deque
 import time
 from copy import deepcopy
 
-MAX_TIME_THRESHOLD = 23
+MAX_TIME = 24
+MAX_TIME_THRESHOLD_FOR_CREATION = 23
 CLAY_ORE_THRESHOLD = 22
 GEODE_THRESHOLD = 21
 
@@ -37,7 +38,8 @@ def parse_blueprint(lines: list) -> list:
             'obsidian': {
                 'ore': obsidian_robot_ore_cost, 
                 'clay': obsidian_robot_clay_cost, 
-                'obsidian': 0, 'geode': 0
+                'obsidian': 0,
+                'geode': 0
             },
             'geode': {
                 'ore': geode_robot_ore_cost, 
@@ -63,21 +65,22 @@ class Node:
         self.elapsed = elapsed
 
 
-def prediction_stop(state, max_time, blueprint, max_geodes, costs, blueprint_item):
-    elapsed = state.elapsed
-    inventory = deepcopy(state.inventory)
-    bots = deepcopy(state.bots)
+def prediction_useful_node(node: Node, blueprint: list, max_geodes: int, robot_type: str) -> bool:
+    elapsed = node.elapsed
+    inventory = deepcopy(node.inventory)
+    bots = deepcopy(node.bots)
+    costs = blueprint[robot_type]
 
-    if blueprint_item == 'ore' and max_time <= elapsed + costs['ore']:
+    if robot_type == 'ore' and MAX_TIME <= elapsed + costs['ore']:
         return True
 
-    if elapsed >= MAX_TIME_THRESHOLD and blueprint_item != 'geode':
+    if elapsed >= MAX_TIME_THRESHOLD_FOR_CREATION and robot_type != 'geode':
         return True
 
-    if elapsed >= CLAY_ORE_THRESHOLD and (blueprint_item == 'clay' or blueprint_item == 'ore'):
+    if elapsed >= CLAY_ORE_THRESHOLD and (robot_type == 'clay' or robot_type == 'ore'):
         return True
 
-    remaining_time = max_time - elapsed
+    remaining_time = MAX_TIME - elapsed
 
     if elapsed >= GEODE_THRESHOLD:
         geode_cost = blueprint['geode']
@@ -87,7 +90,7 @@ def prediction_stop(state, max_time, blueprint, max_geodes, costs, blueprint_ite
                 bots=bots,
                 elapsed=elapsed,
             ),
-            max_time,
+            MAX_TIME,
             geode_cost
         )
         if wait_time < remaining_time:
@@ -98,20 +101,20 @@ def prediction_stop(state, max_time, blueprint, max_geodes, costs, blueprint_ite
             return True
 
 
-def maximum_wait_time(state, max_time, costs):
+def maximum_wait_time(node: Node, costs: dict) -> int:
     return max(
-        0 if state.inventory[key] >= cost
-        else max_time + 1 if state.bots[key] == 0
-        else (cost - state.inventory[key] + state.bots[key] - 1) // state.bots[key]
+        0 if node.inventory[key] >= cost
+        else MAX_TIME + 1 
+        if node.bots[key] == 0
+        else (cost - node.inventory[key] + node.bots[key] - 1) // node.bots[key]
         for key, cost in costs.items()
     )
 
 
-def max_geodes(blueprint):
-    max_time = 24
+def max_geodes(blueprint: list) -> int:
     max_geodes = 0
 
-    queue = deque()  # Initialize a queue for breadth-first search
+    queue = deque()
     queue.append(
         Node(
             inventory = {
@@ -130,27 +133,26 @@ def max_geodes(blueprint):
     ))
 
     while queue:
-        state = queue.popleft()  # Take the next state from the queue
-        inventory = state.inventory
-        bots = state.bots
-        elapsed = state.elapsed
+        node = queue.popleft()
+        inventory = node.inventory
+        bots = node.bots
+        elapsed = node.elapsed
 
-        if elapsed == max_time:
-            # Update the maximum number of geodes if the current count is higher
+        if elapsed == MAX_TIME:
             max_geodes = max(inventory['geode'] + bots['geode'], max_geodes)
             print("max_geodes: ", max_geodes, "\nElapsed: ", elapsed)
             continue
 
-        for blueprint_item in blueprint:
-            costs = blueprint[blueprint_item]
+        for robot_type in blueprint:
+            costs = blueprint[robot_type]
 
-            if prediction_stop(state, max_time, blueprint, max_geodes, costs, blueprint_item):
+            if prediction_useful_node(node, blueprint, max_geodes, robot_type):
                 continue
 
-            wait_time = maximum_wait_time(state, max_time, costs)
+            wait_time = maximum_wait_time(node, costs)
 
             new_elapsed = elapsed + wait_time + 1
-            if new_elapsed >= max_time:
+            if new_elapsed >= MAX_TIME:
                 continue
 
             new_inventory = {
@@ -159,7 +161,7 @@ def max_geodes(blueprint):
             }
 
             new_bots = bots.copy()
-            new_bots[blueprint_item] += 1
+            new_bots[robot_type] += 1
 
             queue.append(Node(
                 inventory=new_inventory,
@@ -176,15 +178,21 @@ def max_geodes(blueprint):
 if __name__ == '__main__':
     file_input = read_file_to_list(path='input_ore.txt')
     blueprints = parse_blueprint(file_input)
+    
     sum_found_geodes = 0
     sum_time = 0
+    
     for blueprint_number, blueprint in blueprints:
         start_time = time.time()
         max_geode = max_geodes(blueprint)
+        
         sum_found_geodes += blueprint_number * max_geode
+        
         print("max_geodes: ", max_geode)
+        
         end_time = time.time()
         sum_time += end_time - start_time
+        
         print("Time: ", end_time - start_time)
     print("Final score: ", sum_found_geodes)
     print("Final time: ", sum_time)
